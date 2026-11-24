@@ -73,6 +73,17 @@ if (LINE.split('.').filter(Boolean).length !== 1) {
   console.error('entry line must be exactly one sentence');
   process.exit(1);
 }
+// A double space or a missing capital/period would read as a typo to
+// the judge and would change the character count the gate scores, so
+// reject them here rather than shipping a subtly malformed line.
+if (/\s{2,}/.test(LINE)) {
+  console.error('entry line must not contain consecutive whitespace');
+  process.exit(1);
+}
+if (!/^[A-Z]/.test(LINE) || !LINE.endsWith('.') || LINE.endsWith('..')) {
+  console.error('entry line must start with a capital letter and end with a single period');
+  process.exit(1);
+}
 
 mkdirSync(OUTPUT_DIR, { recursive: true });
 try {
@@ -83,7 +94,10 @@ try {
 }
 
 // Read the file back: the gate reads exactly these bytes, so a short or
-// mangled write must fail here rather than ship a broken entry.
+// mangled write must fail here rather than ship a broken entry. Verify
+// the content AND the byte length independently: a partial flush can
+// leave the string comparison looking right only if the file was
+// truncated mid-line, and the length check catches that too.
 let back: string;
 try {
   back = readFileSync(DEST, 'utf8');
@@ -93,5 +107,21 @@ try {
 }
 if (back !== LINE + '\n') {
   console.error(`entry.txt read back does not match the entry line (got ${back.length} bytes)`);
+  process.exit(1);
+}
+const { statSync } = await import('node:fs');
+let size: number;
+try {
+  size = statSync(DEST).size;
+} catch (err) {
+  console.error(`entry.txt could not be stat-ed at ${DEST}: ${(err as Error).message}`);
+  process.exit(1);
+}
+if (size !== Buffer.byteLength(LINE, 'utf8') + 1) {
+  console.error(`entry.txt is ${size} bytes, expected ${Buffer.byteLength(LINE, 'utf8') + 1}`);
+  process.exit(1);
+}
+if (!back.endsWith('.\n') || back.endsWith('.\n\n')) {
+  console.error('entry.txt must end with exactly one trailing newline');
   process.exit(1);
 }
